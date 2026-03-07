@@ -2,6 +2,11 @@ from fastapi import FastAPI, Depends, HTTPException, status, Security
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List
+from nlp.cleaner import clean_text
+from nlp.ner_engine import detect_probable_responsible
+from nlp.scoring import compute_and_save_score
+from nlp.alert_engine import check_and_trigger_alerts
+from nlp.similarity import update_clusters_in_db
 
 from database import get_db, engine, Base
 from models import User, UserRole
@@ -170,6 +175,7 @@ def submit_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
+    # Vérifier doublon semaine
     existing = get_report_by_week_and_user(
         db, current_user.id,
         report_data.week_number,
@@ -180,7 +186,36 @@ def submit_report(
             status_code=400,
             detail="Vous avez déjà soumis un rapport pour cette semaine"
         )
-    return create_report(db, report_data, current_user.id)
+
+    # Créer le rapport
+    report = create_report(db, report_data, current_user.id)
+
+    # Pipeline NLP sur chaque problème
+    for problem in report.problems:
+
+        # 1. Nettoyage du texte
+        problem.cleaned_description = clean_text(problem.description)
+
+        # 2. Extraction NER → responsable probable
+        problem.probable_responsible = detect_probable_responsible(
+            problem.description
+        )
+
+        # 3. Calcul du score de criticité
+        compute_and_save_score(db, problem)
+
+    db.commit()
+
+    # 4. Clustering des problèmes similaires
+    update_clusters_in_db(db, report_data.week_number, report_data.year)
+
+    # 5. Vérification et déclenchement des alertes
+    check_and_trigger_alerts(db, report_data.week_number, report_data.year)
+
+    db.refresh(report)
+    return report
+
+
 
 @app.put("/reports/{report_id}", response_model=ReportResponse, tags=["Reports"])
 def modify_report(
