@@ -7,6 +7,7 @@ from nlp.ner_engine import detect_probable_responsible
 from nlp.scoring import compute_and_save_score
 from nlp.alert_engine import check_and_trigger_alerts
 from nlp.similarity import update_clusters_in_db
+from nlp.domino import get_domino_summary, simulate_unblock, build_dependency_graph, export_graph_html
 
 from database import get_db, engine, Base
 from models import User, UserRole
@@ -303,3 +304,51 @@ def get_summary(
     if not summary:
         raise HTTPException(status_code=404, detail="Résumé introuvable pour cette semaine")
     return summary
+# ─── DOMINO ROUTES ────────────────────────────────────────
+
+@app.get("/domino/summary", tags=["Domino"])
+def domino_summary(
+    week: int,
+    year: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Retourne le résumé complet du graphe domino."""
+    return get_domino_summary(db, week, year)
+
+
+@app.get("/domino/simulate", tags=["Domino"])
+def domino_simulate(
+    dept_id: int,
+    week: int,
+    year: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Simule le déblocage d'un département."""
+    graph = build_dependency_graph(db, week, year)
+    return simulate_unblock(graph, dept_id, db)
+
+
+@app.get("/domino/graph-html", tags=["Domino"])
+def domino_graph_html(
+    week: int,
+    year: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Génère et retourne le graphe PyVis en HTML."""
+    from fastapi.responses import FileResponse
+    import os
+
+    graph       = build_dependency_graph(db, week, year)
+    output_path = f"domino_week{week}_{year}.html"
+    export_graph_html(graph, db, output_path)
+
+    if os.path.exists(output_path):
+        return FileResponse(
+            path         = output_path,
+            media_type   = "text/html",
+            filename     = output_path
+        )
+    raise HTTPException(status_code=500, detail="Erreur génération graphe")
