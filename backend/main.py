@@ -185,14 +185,42 @@ def remove_department(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """Supprimer un département (admin seulement)."""
+    """
+    Soft delete — désactive le département si des rapports existent.
+    Suppression physique uniquement si aucune donnée liée.
+    """
+    from models import Report, User as UserModel
+
     dept = db.query(Department).filter(Department.id == dept_id).first()
     if not dept:
         raise HTTPException(status_code=404, detail="Département non trouvé")
-    db.delete(dept)
-    db.commit()
-    return {"message": f"Département {dept_id} supprimé"}
 
+    # Vérifier si des utilisateurs ou rapports sont liés
+    linked_users = db.query(UserModel).filter(
+        UserModel.department_id == dept_id
+    ).count()
+
+    linked_reports = db.query(Report).join(UserModel).filter(
+        UserModel.department_id == dept_id
+    ).count()
+
+    if linked_users > 0 or linked_reports > 0:
+        # Soft delete — archivage
+        dept.is_active = False
+        db.commit()
+        return {
+            "message" : f"Département '{dept.name}' archivé",
+            "archived": True,
+            "reason"  : f"{linked_users} utilisateur(s) et {linked_reports} rapport(s) liés"
+        }
+    else:
+        # Suppression physique si aucune donnée liée
+        db.delete(dept)
+        db.commit()
+        return {
+            "message" : f"Département '{dept.name}' supprimé définitivement",
+            "archived": False
+        }
 # ─── REPORTS ROUTES ───────────────────────────────────────
 
 @app.get("/reports", response_model=List[ReportResponse], tags=["Reports"])

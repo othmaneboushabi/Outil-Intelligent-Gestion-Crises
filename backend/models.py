@@ -33,6 +33,7 @@ class Department(Base):
     name        = Column(String(100), unique=True, nullable=False)
     description = Column(Text, nullable=True)
     created_at  = Column(DateTime, server_default=func.now())
+    is_active = Column(Boolean, default=True)
 
     # Relations
     users                = relationship("User", back_populates="department")
