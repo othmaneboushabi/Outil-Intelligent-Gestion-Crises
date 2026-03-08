@@ -8,7 +8,7 @@ from nlp.scoring import compute_and_save_score
 from nlp.alert_engine import check_and_trigger_alerts
 from nlp.similarity import update_clusters_in_db
 from nlp.domino import get_domino_summary, simulate_unblock, build_dependency_graph, export_graph_html
-
+from nlp.summarizer import generate_executive_summary
 from database import get_db, engine, Base
 from models import User, UserRole
 from schemas import (
@@ -352,3 +352,39 @@ def domino_graph_html(
             filename     = output_path
         )
     raise HTTPException(status_code=500, detail="Erreur génération graphe")
+# ─── GENERATE SUMMARY ROUTES ─────────────────────────────
+
+@app.post("/summaries/generate", tags=["Summaries"])
+def generate_summary(
+    week: int,
+    year: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Génère le résumé exécutif via Mistral-7B."""
+    result = generate_executive_summary(
+        db               = db,
+        week_number      = week,
+        year             = year,
+        user_id          = admin.id,
+        force_regenerate = False
+    )
+    return result
+
+
+@app.post("/summaries/regenerate", tags=["Summaries"])
+def regenerate_summary(
+    week: int,
+    year: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Force la régénération du résumé — bypass cache."""
+    result = generate_executive_summary(
+        db               = db,
+        week_number      = week,
+        year             = year,
+        user_id          = admin.id,
+        force_regenerate = True
+    )
+    return result
