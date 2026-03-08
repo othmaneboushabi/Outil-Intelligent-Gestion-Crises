@@ -87,7 +87,8 @@ def show_sidebar():
             st.page_link("pages/2_Graphiques.py",        label="📊 Graphiques")
             st.page_link("pages/3_Effet_Domino.py",      label="🕸️ Effet Domino")
             st.page_link("pages/4_Resume_IA.py",         label="🤖 Résumé IA")
-            st.page_link("pages/6_Admin_Gestion.py",     label="⚙️ Administration")  
+            st.page_link("pages/6_Admin_Gestion.py",     label="⚙️ Administration") 
+            st.page_link("pages/5_Mon_Departement.py", label="🔍 Analyser via IA") 
         else:
             st.markdown("### 📋 Navigation")
             st.page_link("pages/5_Mon_Departement.py",   label="🏢 Mon Département")
@@ -128,7 +129,7 @@ def main():
                 st.page_link("pages/3_Effet_Domino.py",     label="🕸️ Effet Domino")
             with col3:
                 st.page_link("pages/4_Resume_IA.py",        label="🤖 Résumé IA")
-                st.page_link("pages/6_Admin_Gestion.py",    label="⚙️ Administration")  # ← AJOUTER
-
+                st.page_link("pages/6_Admin_Gestion.py",    label="⚙️ Administration")
+             
 if __name__ == "__main__":
     main()

@@ -386,3 +386,78 @@ def domino_graph_html(
             filename   = output_path
         )
     raise HTTPException(status_code=500, detail="Erreur génération graphe")
+# ─── ANALYZE ROUTE (temps réel) ──────────────────────────
+
+@app.post("/analyze", tags=["NLP"])
+def analyze_problem_realtime(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Analyse un problème en temps réel avant soumission.
+    Retourne : entités NER, score criticité, responsable probable,
+    problèmes similaires.
+    """
+    description  = data.get("description", "")
+    impact       = data.get("impact", 3)
+    urgency      = data.get("urgency", 3)
+    repetitions  = data.get("repetitions", 1)
+    nb_deps      = data.get("nb_dependencies", 0)
+    week_number  = data.get("week_number", 1)
+    year         = data.get("year", 2025)
+
+    if not description:
+        raise HTTPException(status_code=400, detail="Description obligatoire")
+
+    from nlp.cleaner import clean_text
+    from nlp.ner_engine import extract_entities, detect_probable_responsible
+    from nlp.scoring import calculate_criticality_score, get_criticality_level
+    from nlp.similarity import compute_embeddings, find_similar_problems
+    from models import Problem, Report
+    import numpy as np
+
+    # 1. Nettoyage
+    cleaned = clean_text(description)
+
+    # 2. Entités NER
+    entities    = extract_entities(description)
+    responsible = detect_probable_responsible(description)
+
+    # 3. Score criticité
+    score = calculate_criticality_score(
+        impact, urgency, repetitions, nb_deps
+    )
+    level = get_criticality_level(score)
+
+    # 4. Problèmes similaires dans la semaine
+    similar = []
+    try:
+        problems = (
+            db.query(Problem)
+            .join(Report)
+            .filter(
+                Report.week_number == week_number,
+                Report.year        == year,
+                Problem.cleaned_description != None
+            )
+            .all()
+        )
+
+        if problems:
+            candidates = [p.cleaned_description for p in problems]
+            ids        = [p.id for p in problems]
+            similar    = find_similar_problems(
+                cleaned, candidates, ids, threshold=0.75
+            )
+    except Exception:
+        similar = []
+
+    return {
+        "cleaned_description" : cleaned,
+        "entities"            : entities,
+        "probable_responsible": responsible,
+        "criticality_score"   : score,
+        "criticality_level"   : level,
+        "similar_problems"    : similar
+    }
