@@ -10,7 +10,7 @@ from nlp.similarity import update_clusters_in_db
 from nlp.domino import get_domino_summary, simulate_unblock, build_dependency_graph, export_graph_html
 from nlp.summarizer import generate_executive_summary
 from database import get_db, engine, Base
-from models import User, UserRole
+from models import Department, User, UserRole
 from schemas import (
     UserCreate, UserResponse, UserUpdate,
     DepartmentCreate, DepartmentResponse, DepartmentUpdate,
@@ -73,11 +73,11 @@ def login(
     update_last_login(db, user.id)
     token = create_access_token(data={"sub": str(user.id)})
     return TokenResponse(
-        access_token=token,
-        token_type="bearer",
-        role=user.role,
-        full_name=user.full_name,
-        department_id=user.department_id
+        access_token  = token,
+        token_type    = "bearer",
+        role          = user.role,
+        full_name     = user.full_name,
+        department_id = user.department_id
     )
 
 @app.get("/auth/me", response_model=UserResponse, tags=["Auth"])
@@ -85,6 +85,18 @@ def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 # ─── USERS ROUTES ─────────────────────────────────────────
+
+@app.post("/users", response_model=UserResponse, tags=["Users"])
+def create_user_admin(
+    user_data: UserCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Créer un utilisateur (admin seulement)."""
+    existing = get_user_by_email(db, user_data.email)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email déjà utilisé")
+    return create_user(db, user_data)
 
 @app.get("/users", response_model=List[UserResponse], tags=["Users"])
 def list_users(
@@ -115,6 +127,25 @@ def disable_user(
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     return {"message": f"Utilisateur {user_id} désactivé"}
+
+@app.patch("/users/{user_id}/toggle", tags=["Users"])
+def toggle_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Activer/Désactiver un utilisateur — interdit sur les admins."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    if user.role == UserRole.admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Impossible de désactiver un administrateur"
+        )
+    user.is_active = not user.is_active
+    db.commit()
+    return {"message": f"Utilisateur {user_id} — actif: {user.is_active}"}
 
 # ─── DEPARTMENTS ROUTES ───────────────────────────────────
 
@@ -154,9 +185,12 @@ def remove_department(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    success = delete_department(db, dept_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Département introuvable")
+    """Supprimer un département (admin seulement)."""
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Département non trouvé")
+    db.delete(dept)
+    db.commit()
     return {"message": f"Département {dept_id} supprimé"}
 
 # ─── REPORTS ROUTES ───────────────────────────────────────
@@ -176,7 +210,6 @@ def submit_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    # Vérifier doublon semaine
     existing = get_report_by_week_and_user(
         db, current_user.id,
         report_data.week_number,
@@ -188,35 +221,18 @@ def submit_report(
             detail="Vous avez déjà soumis un rapport pour cette semaine"
         )
 
-    # Créer le rapport
     report = create_report(db, report_data, current_user.id)
 
-    # Pipeline NLP sur chaque problème
     for problem in report.problems:
-
-        # 1. Nettoyage du texte
-        problem.cleaned_description = clean_text(problem.description)
-
-        # 2. Extraction NER → responsable probable
-        problem.probable_responsible = detect_probable_responsible(
-            problem.description
-        )
-
-        # 3. Calcul du score de criticité
+        problem.cleaned_description  = clean_text(problem.description)
+        problem.probable_responsible = detect_probable_responsible(problem.description)
         compute_and_save_score(db, problem)
 
     db.commit()
-
-    # 4. Clustering des problèmes similaires
     update_clusters_in_db(db, report_data.week_number, report_data.year)
-
-    # 5. Vérification et déclenchement des alertes
     check_and_trigger_alerts(db, report_data.week_number, report_data.year)
-
     db.refresh(report)
     return report
-
-
 
 @app.put("/reports/{report_id}", response_model=ReportResponse, tags=["Reports"])
 def modify_report(
@@ -284,7 +300,7 @@ def active_alerts(
         ))
     return result
 
-# ─── EXECUTIVE SUMMARY ROUTES ─────────────────────────────
+# ─── SUMMARIES ROUTES ─────────────────────────────────────
 
 @app.get("/summaries", response_model=List[ExecutiveSummaryResponse], tags=["Summaries"])
 def list_summaries(
@@ -302,8 +318,33 @@ def get_summary(
 ):
     summary = get_summary_by_week(db, week, year)
     if not summary:
-        raise HTTPException(status_code=404, detail="Résumé introuvable pour cette semaine")
+        raise HTTPException(status_code=404, detail="Résumé introuvable")
     return summary
+
+@app.post("/summaries/generate", tags=["Summaries"])
+def generate_summary(
+    week: int,
+    year: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    return generate_executive_summary(
+        db=db, week_number=week, year=year,
+        user_id=admin.id, force_regenerate=False
+    )
+
+@app.post("/summaries/regenerate", tags=["Summaries"])
+def regenerate_summary(
+    week: int,
+    year: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    return generate_executive_summary(
+        db=db, week_number=week, year=year,
+        user_id=admin.id, force_regenerate=True
+    )
+
 # ─── DOMINO ROUTES ────────────────────────────────────────
 
 @app.get("/domino/summary", tags=["Domino"])
@@ -313,9 +354,7 @@ def domino_summary(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """Retourne le résumé complet du graphe domino."""
     return get_domino_summary(db, week, year)
-
 
 @app.get("/domino/simulate", tags=["Domino"])
 def domino_simulate(
@@ -325,10 +364,8 @@ def domino_simulate(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """Simule le déblocage d'un département."""
     graph = build_dependency_graph(db, week, year)
     return simulate_unblock(graph, dept_id, db)
-
 
 @app.get("/domino/graph-html", tags=["Domino"])
 def domino_graph_html(
@@ -337,54 +374,15 @@ def domino_graph_html(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """Génère et retourne le graphe PyVis en HTML."""
     from fastapi.responses import FileResponse
     import os
-
     graph       = build_dependency_graph(db, week, year)
     output_path = f"domino_week{week}_{year}.html"
     export_graph_html(graph, db, output_path)
-
     if os.path.exists(output_path):
         return FileResponse(
-            path         = output_path,
-            media_type   = "text/html",
-            filename     = output_path
+            path       = output_path,
+            media_type = "text/html",
+            filename   = output_path
         )
     raise HTTPException(status_code=500, detail="Erreur génération graphe")
-# ─── GENERATE SUMMARY ROUTES ─────────────────────────────
-
-@app.post("/summaries/generate", tags=["Summaries"])
-def generate_summary(
-    week: int,
-    year: int,
-    db: Session = Depends(get_db),
-    admin: User = Depends(get_current_admin)
-):
-    """Génère le résumé exécutif via Mistral-7B."""
-    result = generate_executive_summary(
-        db               = db,
-        week_number      = week,
-        year             = year,
-        user_id          = admin.id,
-        force_regenerate = False
-    )
-    return result
-
-
-@app.post("/summaries/regenerate", tags=["Summaries"])
-def regenerate_summary(
-    week: int,
-    year: int,
-    db: Session = Depends(get_db),
-    admin: User = Depends(get_current_admin)
-):
-    """Force la régénération du résumé — bypass cache."""
-    result = generate_executive_summary(
-        db               = db,
-        week_number      = week,
-        year             = year,
-        user_id          = admin.id,
-        force_regenerate = True
-    )
-    return result
