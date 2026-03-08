@@ -87,7 +87,7 @@ with tab1:
             st.info("Aucun département créé.")
         else:
             for dept in depts:
-                col1, col2, col3 = st.columns([3, 4, 1])
+                col1, col2, col3, col4 = st.columns([3, 3, 1, 1])
                 with col1:
                     st.markdown(f"**🏢 {dept['name']}**")
                 with col2:
@@ -95,14 +95,28 @@ with tab1:
                         dept.get("description") or "_Pas de description_"
                     )
                 with col3:
+                    if dept.get("is_active", True):
+                        st.markdown("🟢 Actif")
+                    else:
+                        st.markdown("🔴 Archivé")
+                with col4:
                     if st.button("🗑️", key=f"del_dept_{dept['id']}",
-                                  help=f"Supprimer {dept['name']}"):
+                                  help=f"Supprimer/Archiver {dept['name']}"):
                         del_resp = requests.delete(
                             f"{API_URL}/departments/{dept['id']}",
                             headers = get_headers()
                         )
                         if del_resp.status_code == 200:
-                            st.success(f"✅ '{dept['name']}' supprimé.")
+                            result = del_resp.json()
+                            if result.get("archived"):
+                                st.warning(
+                                    f"📦 '{dept['name']}' archivé "
+                                    f"({result['reason']})"
+                                )
+                            else:
+                                st.success(
+                                    f"✅ '{dept['name']}' supprimé définitivement."
+                                )
                             st.rerun()
                         else:
                             st.error("Impossible de supprimer ce département.")
@@ -214,7 +228,6 @@ with tab2:
                         st.markdown("👤 User")
                 with col5:
                     is_active = user.get("is_active", True)
-                    # Ne pas afficher le bouton toggle pour les admins
                     if user["role"] != "admin":
                         btn_label = "🔴" if is_active else "🟢"
                         btn_help  = "Désactiver" if is_active else "Activer"
