@@ -66,6 +66,7 @@ def update_last_login(db: Session, user_id: int) -> None:
     if user:
         user.last_login = datetime.utcnow()
         db.commit()
+        db.refresh(user)  
 
 
 # ─── CRUD : DEPARTMENTS ───────────────────────────────────

@@ -35,6 +35,7 @@ class DepartmentUpdate(BaseModel):
 class DepartmentResponse(DepartmentBase):
     id: int
     created_at: datetime
+    is_active : bool = True  
 
     model_config = {"from_attributes": True}
 
@@ -54,6 +55,13 @@ class UserCreate(UserBase):
     def password_min_length(cls, v):
         if len(v) < 8:
             raise ValueError('Le mot de passe doit contenir au moins 8 caractères')
+        return v
+
+    @field_validator('department_id')
+    def department_required_for_user(cls, v, info):
+        role = info.data.get('role')
+        if role == UserRole.user and v is None:
+            raise ValueError('Un utilisateur doit avoir un département')
         return v
 
 class UserUpdate(BaseModel):
