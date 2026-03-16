@@ -9,8 +9,8 @@
 - [Description](#description)
 - [Technologies](#technologies)
 - [Architecture](#architecture)
+- [Démarrage rapide Docker](#démarrage-rapide-docker)
 - [Installation locale](#installation-locale)
-- [Installation Docker](#installation-docker)
 - [Structure du projet](#structure-du-projet)
 - [Routes API](#routes-api)
 - [Comptes de test](#comptes-de-test)
@@ -28,7 +28,7 @@ L'**Outil Intelligent de Gestion de Crises** permet à une organisation de colle
 - Calculer automatiquement un score de criticité pour chaque problème
 - Détecter les effets domino entre départements
 - Générer un résumé exécutif automatique via Mistral-7B
-- Alerter la direction pour les problèmes critiques (score > 4.6)
+- Alerter la direction pour les problèmes critiques (score > 4.5)
 
 ---
 
@@ -90,6 +90,112 @@ L'**Outil Intelligent de Gestion de Crises** permet à une organisation de colle
 
 ---
 
+## 🐳 Démarrage rapide Docker
+
+### Prérequis
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installé et lancé
+- [Git](https://git-scm.com/) installé
+
+### Étape 1 — Cloner le projet
+
+```bash
+git clone https://github.com/othmaneboushabi/Outil-Intelligent-Gestion-Crises.git
+cd Outil-Intelligent-Gestion-Crises
+git checkout develop
+```
+
+### Étape 2 — Lancer les 3 conteneurs
+
+```bash
+docker-compose up --build
+```
+
+```
+Résultat attendu :
+─────────────────────────────────────────────
+crisis_db  ✅ PostgreSQL :5432 démarré
+crisis_api ✅ FastAPI    :8000 démarré
+crisis_web ✅ Streamlit  :8501 démarré
+```
+
+> ⚠️ Le premier build télécharge SpaCy et les modèles IA — prévoir 5 à 10 minutes.
+
+### Étape 3 — Initialiser les données
+
+Ouvrez Swagger : **http://localhost:8000/docs**
+
+**① Créer l'admin :**
+```json
+POST /auth/register
+{
+  "full_name": "Admin",
+  "email": "admin@crisis.com",
+  "password": "Admin1234",
+  "role": "admin",
+  "department_id": null
+}
+```
+
+**② Se connecter et récupérer le token :**
+```
+POST /auth/login
+username : admin@crisis.com
+password : Admin1234
+→ Copier access_token → Cliquer Authorize → Coller le token
+```
+
+**③ Créer les 5 départements :**
+```json
+POST /departments  →  { "name": "IT",         "description": "Informatique" }
+POST /departments  →  { "name": "Finance",     "description": "Finance" }
+POST /departments  →  { "name": "RH",          "description": "Ressources Humaines" }
+POST /departments  →  { "name": "Logistique",  "description": "Logistique" }
+POST /departments  →  { "name": "Marketing",   "description": "Marketing" }
+```
+
+**④ Créer les utilisateurs :**
+```json
+POST /users  →  { "full_name": "Chef IT",      "email": "it@crisis.com",      "password": "User1234", "role": "user", "department_id": 1 }
+POST /users  →  { "full_name": "Chef Finance",  "email": "finance@crisis.com", "password": "User1234", "role": "user", "department_id": 2 }
+POST /users  →  { "full_name": "Chef RH",       "email": "rh@crisis.com",      "password": "User1234", "role": "user", "department_id": 3 }
+```
+
+### Étape 4 — Tester le Dashboard
+
+Ouvrez : **http://localhost:8501**
+
+```
+Admin  : admin@crisis.com  / Admin1234
+User   : it@crisis.com     / User1234
+```
+
+### Commandes Docker utiles
+
+```bash
+# Arrêter les conteneurs (données conservées)
+docker-compose down
+
+# Arrêter + supprimer toutes les données
+docker-compose down -v
+
+# Voir les logs en temps réel
+docker-compose logs -f
+
+# Voir les logs d'un seul service
+docker-compose logs -f api
+
+# Redémarrer un seul service
+docker-compose restart api
+
+# Vérifier l'état des conteneurs
+docker-compose ps
+```
+
+> 💡 Les données sont conservées dans le volume `postgres_data` entre les redémarrages.
+> Pour repartir de zéro : `docker-compose down -v` puis `docker-compose up`.
+
+---
+
 ## Installation locale
 
 ### Prérequis
@@ -107,8 +213,8 @@ git checkout develop
 
 # 2. Créer et activer le venv
 python -m venv venv
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate       # Windows
+source venv/bin/activate    # Linux/Mac
 
 # 3. Installer les dépendances backend
 cd backend
@@ -117,9 +223,8 @@ pip install -r requirements.txt
 # 4. Installer le modèle SpaCy français
 python -m spacy download fr_core_news_md
 
-# 5. Configurer la base de données
-# Créer la base dans PostgreSQL :
-# CREATE DATABASE crisis_db;
+# 5. Créer la base de données PostgreSQL
+# psql -U postgres -c "CREATE DATABASE crisis_db;"
 
 # 6. Configurer les variables d'environnement
 cp .env.example .env
@@ -134,30 +239,9 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-### Accès
+### Accès local
 - **API Swagger :** http://localhost:8000/docs
 - **Dashboard :** http://localhost:8501
-
----
-
-## Installation Docker
-
-```bash
-# Lancer les 3 services
-docker-compose up --build
-
-# Arrêter
-docker-compose down
-
-# Arrêter + supprimer les données
-docker-compose down -v
-```
-
-### Accès Docker
-- **API :** http://localhost:8000/docs
-- **Dashboard :** http://localhost:8501
-
-> ⚠️ Après `docker-compose up`, créer l'admin et les départements via Swagger.
 
 ---
 
@@ -197,6 +281,7 @@ crisis_manager/
 ├── Dockerfile.streamlit
 ├── docker-compose.yml
 ├── .env.example
+├── README.md
 └── JOURNAL.md
 ```
 
@@ -336,7 +421,8 @@ score_final = min(score_brut + bonus, 5.0)
 
 **Othmane Boushabi**
 Génie Informatique — Intelligence Artificielle
-EMSI 
+EMSI
+
 ---
 
 ## Licence
