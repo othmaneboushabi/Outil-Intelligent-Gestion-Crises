@@ -107,11 +107,20 @@ def list_users(
 
 @app.put("/users/{user_id}", response_model=UserResponse, tags=["Users"])
 def modify_user(
-    user_id: int,
+    user_id  : int,
     user_data: UserUpdate,
-    db: Session = Depends(get_db),
-    admin: User = Depends(get_current_admin)
+    db       : Session = Depends(get_db),
+    admin    : User    = Depends(get_current_admin)
 ):
+    # Vérifier que le département existe si fourni
+    if user_data.department_id is not None:
+        dept = get_department_by_id(db, user_data.department_id)
+        if not dept:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Département {user_data.department_id} introuvable"
+            )
+
     user = update_user(db, user_id, user_data)
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
@@ -185,27 +194,27 @@ def remove_department(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """
-    Soft delete — désactive le département si des rapports existent.
-    Suppression physique uniquement si aucune donnée liée.
-    """
     from models import Report, User as UserModel
 
     dept = db.query(Department).filter(Department.id == dept_id).first()
     if not dept:
         raise HTTPException(status_code=404, detail="Département non trouvé")
 
-    # Vérifier si des utilisateurs ou rapports sont liés
+    # Utilisateurs liés
     linked_users = db.query(UserModel).filter(
         UserModel.department_id == dept_id
     ).count()
 
-    linked_reports = db.query(Report).join(UserModel).filter(
+    # Rapports liés via les users du département
+    user_ids = db.query(UserModel.id).filter(
         UserModel.department_id == dept_id
+    ).subquery()
+
+    linked_reports = db.query(Report).filter(
+        Report.submitted_by.in_(user_ids)
     ).count()
 
     if linked_users > 0 or linked_reports > 0:
-        # Soft delete — archivage
         dept.is_active = False
         db.commit()
         return {
@@ -214,11 +223,10 @@ def remove_department(
             "reason"  : f"{linked_users} utilisateur(s) et {linked_reports} rapport(s) liés"
         }
     else:
-        # Suppression physique si aucune donnée liée
         db.delete(dept)
         db.commit()
         return {
-            "message" : f"Département '{dept.name}' supprimé définitivement",
+            "message" : f"Département '{dept.name}' supprimé ",
             "archived": False
         }
 # ─── REPORTS ROUTES ───────────────────────────────────────

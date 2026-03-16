@@ -90,8 +90,9 @@ def show_sidebar():
             st.page_link("pages/6_Admin_Gestion.py",     label="⚙️ Administration") 
             st.page_link("pages/5_Mon_Departement.py", label="🔍 Analyser via IA") 
         else:
-            st.markdown("### 📋 Navigation")
-            st.page_link("pages/5_Mon_Departement.py",   label="🏢 Mon Département")
+            st.markdown("### 📋 Navigation User")
+            st.page_link("pages/5_Mon_Departement.py", label="🏢 Mon Département")
+            st.page_link("pages/5_Mon_Departement.py", label="🔍 Analyser via IA")
 
         st.markdown("---")
         if st.button("🚪 Se déconnecter", use_container_width=True):
@@ -130,6 +131,51 @@ def main():
             with col3:
                 st.page_link("pages/4_Resume_IA.py",        label="🤖 Résumé IA")
                 st.page_link("pages/6_Admin_Gestion.py",    label="⚙️ Administration")
-             
-if __name__ == "__main__":
-    main()
+                st.page_link("pages/5_Mon_Departement.py", label="🔍 Analyser via IA")
+
+
+        else:
+            # ── Navigation rapide User ──
+            st.markdown("### 🗂️ Que souhaitez-vous faire ?")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.page_link(
+                    "pages/5_Mon_Departement.py",
+                    label="📝 Soumettre mon rapport hebdomadaire"
+                )
+            with col2:
+                st.page_link(
+                    "pages/5_Mon_Departement.py",
+                    label="🔍 Analyser un problème via IA"
+                )
+
+            st.markdown("---")
+
+            # ── Infos utiles User ──
+            st.markdown("### 📌 Informations")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("""
+**📋 Comment soumettre un rapport ?**
+1. Cliquez sur **Mon Département**
+2. Sélectionnez la semaine et l'année
+3. Décrivez le problème rencontré
+4. Indiquez l'impact, l'urgence et les répétitions
+5. Sélectionnez les départements bloqués
+6. Cliquez sur **Soumettre le Rapport**
+                """)
+            with col2:
+                st.markdown("""
+**🤖 Comment fonctionne l'analyse IA ?**
+- **Score criticité** : calculé automatiquement (1 à 5)
+- **🔴 Score > 4.6** : alerte critique déclenchée
+- **🟠 Score 3.6–4.6** : niveau élevé
+- **🟡 Score 2.6–3.6** : niveau modéré
+- **🟢 Score < 2.6** : niveau faible
+- **Responsable probable** : détecté par NLP
+                """)
+
+            st.markdown("---")
+            st.info("💡 **Rappel :** Vous ne pouvez soumettre qu'**un seul rapport par semaine**.")
+main()           

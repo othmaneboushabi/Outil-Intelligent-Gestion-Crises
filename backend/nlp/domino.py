@@ -79,7 +79,7 @@ def find_bottleneck(graph: nx.DiGraph, db: Session) -> Optional[Dict]:
     if len(graph.nodes) == 0:
         return None
 
-    centrality = nx.betweenness_centrality(graph, weight="weight")
+    centrality = nx.out_degree_centrality(graph)
 
     if not centrality:
         return None

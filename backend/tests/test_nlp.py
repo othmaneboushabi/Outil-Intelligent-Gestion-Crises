@@ -1,124 +1,109 @@
-# ─── TESTS NLP ───────────────────────────────────────────
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import pytest
 from nlp.cleaner import clean_text
-from nlp.ner_engine import extract_entities
+from nlp.ner_engine import extract_entities, detect_probable_responsible
 from nlp.scoring import calculate_criticality_score, get_criticality_level
 
-def compute_criticality_score(impact, urgency, repetitions, nb_dependencies):
-    score = calculate_criticality_score(impact, urgency, repetitions, nb_dependencies)
-    level = get_criticality_level(score)
-    return score, level
+
+# ─── TESTS CLEANER ───────────────────────────────────────
+
+def test_clean_text_basic():
+    """Nettoyage basique du texte"""
+    result = clean_text("Le serveur est tombé en panne !")
+    assert result is not None
+    assert isinstance(result, str)
 
 
-class TestCleaner:
-
-    def test_clean_basic(self):
-        """Nettoyage texte basique"""
-        text = "  Bonjour   le   monde!  "
-        result = clean_text(text)
-        assert isinstance(result, str)
-        assert len(result) > 0
-
-    def test_clean_special_chars(self):
-        """Suppression caractères spéciaux"""
-        text = "Problème@#$ avec le serveur!!!"
-        result = clean_text(text)
-        assert "@" not in result
-        assert "#" not in result
-
-    def test_clean_lowercase(self):
-        """Texte en minuscules"""
-        text = "SERVEUR TOMBE DEPUIS LUNDI"
-        result = clean_text(text)
-        assert result == result.lower()
-
-    def test_clean_empty(self):
-        """Texte vide → retourne None"""
-        result = clean_text("")
-        assert result is None or isinstance(result, str)
-
-    def test_clean_numbers(self):
-        """Les chiffres sont conservés ou supprimés proprement"""
-        text = "Problème depuis 3 jours en semaine 42"
-        result = clean_text(text)
-        assert isinstance(result, str)
+def test_clean_text_lowercase():
+    """Texte converti en minuscules"""
+    result = clean_text("SERVEUR TOMBE")
+    assert result == result.lower()
 
 
-class TestNER:
-
-    def test_ner_person(self):
-        """Détection nom de personne"""
-        text = "Karim Benali n'a pas fourni les accès nécessaires"
-        entities = extract_entities(text)
-        assert isinstance(entities, dict)
-
-    def test_ner_date(self):
-        """Détection date"""
-        text = "Le serveur est tombé depuis vendredi dernier"
-        entities = extract_entities(text)
-        assert isinstance(entities, dict)
-
-    def test_ner_empty_text(self):
-        """Texte vide → dictionnaire vide ou avec listes vides"""
-        entities = extract_entities("")
-        assert isinstance(entities, dict)
-
-    def test_ner_no_entities(self):
-        """Texte sans entités nommées"""
-        text = "le problème est technique"
-        entities = extract_entities(text)
-        assert isinstance(entities, dict)
-
-    def test_ner_returns_dict(self):
-        """Résultat toujours un dictionnaire"""
-        text = "Marie Dupont a signalé un bug lundi à Paris"
-        entities = extract_entities(text)
-        assert isinstance(entities, dict)
-        for key, value in entities.items():
-            assert isinstance(value, list)
+def test_clean_text_removes_punctuation():
+    """Ponctuation supprimée"""
+    result = clean_text("Problème critique !!!")
+    assert "!" not in result
 
 
-class TestScoring:
+def test_clean_text_empty():
+    """Texte vide → None"""
+    result = clean_text("")
+    assert result is None
 
-    def test_score_returns_tuple(self):
-        """compute_criticality_score retourne (float, str)"""
-        result = compute_criticality_score(
-            impact=3, urgency=3, repetitions=1, nb_dependencies=0
-        )
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-        assert isinstance(result[0], float)
-        assert isinstance(result[1], str)
 
-    def test_score_high_impact_urgency(self):
-        """Impact et urgence élevés → score élevé"""
-        score_high, _ = compute_criticality_score(
-            impact=5, urgency=5, repetitions=1, nb_dependencies=0
-        )
-        score_low, _ = compute_criticality_score(
-            impact=1, urgency=1, repetitions=1, nb_dependencies=0
-        )
-        assert score_high > score_low
+def test_clean_text_returns_string():
+    """Retourne une chaîne de caractères"""
+    result = clean_text("Panne serveur critique depuis lundi")
+    assert isinstance(result, str)
+    assert len(result) > 0
 
-    def test_score_repetitions_effect(self):
-        """Plus de répétitions → score plus élevé"""
-        score_high, _ = compute_criticality_score(
-            impact=3, urgency=3, repetitions=10, nb_dependencies=0
-        )
-        score_low, _ = compute_criticality_score(
-            impact=3, urgency=3, repetitions=1, nb_dependencies=0
-        )
-        assert score_high >= score_low
 
-    def test_score_dependencies_effect(self):
-        """Plus de dépendances → score plus élevé"""
-        score_high, _ = compute_criticality_score(
-            impact=3, urgency=3, repetitions=1, nb_dependencies=5
-        )
-        score_low, _ = compute_criticality_score(
-            impact=3, urgency=3, repetitions=1, nb_dependencies=0
-        )
-        assert score_high >= score_low
+# ─── TESTS NER ───────────────────────────────────────────
+
+def test_extract_entities_person():
+    """Extraction d'une personne"""
+    entities = extract_entities("Karim Benali a bloqué l'accès au serveur")
+    assert "PER" in entities
+    assert len(entities["PER"]) > 0
+
+
+def test_extract_entities_returns_dict():
+    """Retourne un dictionnaire avec les bonnes clés"""
+    entities = extract_entities("Test texte quelconque")
+    assert isinstance(entities, dict)
+    assert "PER"  in entities
+    assert "DATE" in entities
+    assert "LOC"  in entities
+
+
+def test_extract_entities_date():
+    """Extraction d'une date"""
+    entities = extract_entities("Panne depuis lundi dernier")
+    assert "DATE" in entities
+
+
+def test_detect_responsible_person():
+    """Détection responsable probable"""
+    responsible = detect_probable_responsible(
+        "Ahmed Alami n'a pas fourni les accès nécessaires"
+    )
+    assert responsible is not None
+    assert isinstance(responsible, str)
+
+
+def test_detect_responsible_none():
+    """Texte sans nom → None ou string"""
+    responsible = detect_probable_responsible(
+        "Le système est en panne depuis hier"
+    )
+    assert responsible is None or isinstance(responsible, str)
+
+
+# ─── TESTS SCORING ───────────────────────────────────────
+
+def test_score_formule_v21():
+    """Vérification formule v2.1 complète"""
+    # impact=5, urgency=5, rep=3, deps=2
+    # brut = 5×0.4 + 5×0.3 + 2×0.2 + 3×0.1 = 4.2
+    # bonus = 25/25 × 0.5 = 0.5
+    # total = 4.7
+    score = calculate_criticality_score(5, 5, 3, 2)
+    assert score == 4.7
+
+
+def test_score_plafond():
+    """Score ne dépasse pas 5.0"""
+    score = calculate_criticality_score(5, 5, 10, 10)
+    assert score <= 5.0
+
+
+def test_niveau_alerte_maximale():
+    """Score > 4.5 → Alerte Maximale"""
+    level = get_criticality_level(4.7)
+    assert "Alerte Maximale" in level
+
+
+def test_niveau_critique_label():
+    """Score entre 3.5 et 4.5 → Critique"""
+    level = get_criticality_level(4.0)
+    assert "Critique" in level

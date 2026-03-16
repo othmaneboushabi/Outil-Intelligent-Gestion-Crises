@@ -242,7 +242,7 @@ try:
 
     df_table = pd.DataFrame([
         {
-            "ID"          : p["id"],
+            
             "Description" : p["description"][:60] + "...",
             "Type"        : p["type"],
             "Impact"      : p["impact"],

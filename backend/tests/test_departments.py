@@ -1,116 +1,109 @@
-# ─── TESTS DÉPARTEMENTS ───────────────────────────────────
-
-class TestCreateDepartment:
-
-    def test_create_success(self, client, admin_token):
-        """Création département réussie"""
-        resp = client.post("/departments", json={
-            "name"       : "Finance",
-            "description": "Département Finance"
-        }, headers={"Authorization": f"Bearer {admin_token}"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["name"] == "Finance"
-
-    def test_create_duplicate(self, client, admin_token):
-        """Département déjà existant → 400"""
-        headers = {"Authorization": f"Bearer {admin_token}"}
-        client.post("/departments", json={
-            "name": "Doublon", "description": ""
-        }, headers=headers)
-        resp = client.post("/departments", json={
-            "name": "Doublon", "description": ""
-        }, headers=headers)
-        assert resp.status_code == 400
-
-    def test_create_unauthorized(self, client, user_token):
-        """User normal ne peut pas créer → 403"""
-        resp = client.post("/departments", json={
-            "name": "Interdit", "description": ""
-        }, headers={"Authorization": f"Bearer {user_token}"})
-        assert resp.status_code == 403
-
-    def test_create_no_token(self, client):
-        """Sans token → 401"""
-        resp = client.post("/departments", json={
-            "name": "SansToken", "description": ""
-        })
-        assert resp.status_code == 401
+import pytest
 
 
-class TestGetDepartments:
-
-    def test_get_all(self, client, admin_token):
-        """GET /departments → liste"""
-        resp = client.get(
-            "/departments",
-            headers={"Authorization": f"Bearer {admin_token}"}
-        )
-        assert resp.status_code == 200
-        assert isinstance(resp.json(), list)
-
-    def test_get_authenticated(self, client, user_token):
-        """User normal peut voir les départements"""
-        resp = client.get(
-            "/departments",
-            headers={"Authorization": f"Bearer {user_token}"}
-        )
-        assert resp.status_code == 200
+def test_create_department_success(client, auth_headers_admin):
+    """Créer département — admin"""
+    resp = client.post("/departments",
+        json    = {"name": "Finance", "description": "Dept Finance"},
+        headers = auth_headers_admin
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"]      == "Finance"
+    assert data["is_active"] == True
 
 
-class TestSoftDelete:
+def test_create_department_duplicate(client, auth_headers_admin):
+    """Département dupliqué → 400"""
+    client.post("/departments",
+        json    = {"name": "RH"},
+        headers = auth_headers_admin
+    )
+    resp = client.post("/departments",
+        json    = {"name": "RH"},
+        headers = auth_headers_admin
+    )
+    assert resp.status_code == 400
 
-    def test_soft_delete_with_users(self, client, admin_token, user_token):
-        """Département avec users → archivé (soft delete)"""
-        headers = {"Authorization": f"Bearer {admin_token}"}
 
-        # Créer département
-        resp = client.post("/departments", json={
-            "name": "A Archiver", "description": ""
-        }, headers=headers)
-        dept_id = resp.json()["id"]
+def test_create_department_unauthorized(client, auth_headers_user):
+    """User ne peut pas créer département → 403"""
+    resp = client.post("/departments",
+        json    = {"name": "Marketing"},
+        headers = auth_headers_user
+    )
+    assert resp.status_code == 403
 
-        # Créer user lié à ce département
-        client.post("/users", json={
-            "full_name"    : "User Lié",
-            "email"        : "userlie@crisis.com",
-            "password"     : "Password123",
+
+def test_get_departments_admin(client, auth_headers_admin):
+    """Admin peut lister les départements"""
+    resp = client.get("/departments", headers=auth_headers_admin)
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
+
+def test_get_departments_user(client, auth_headers_user):
+    """User peut lister les départements"""
+    resp = client.get("/departments", headers=auth_headers_user)
+    assert resp.status_code == 200
+
+
+def test_get_departments_unauthenticated(client):
+    """Non authentifié → 401"""
+    resp = client.get("/departments")
+    assert resp.status_code == 401
+
+
+def test_hard_delete_empty_department(client, auth_headers_admin):
+    """Département vide → suppression physique"""
+    resp = client.post("/departments",
+        json    = {"name": "Empty Dept"},
+        headers = auth_headers_admin
+    )
+    dept_id = resp.json()["id"]
+    del_resp = client.delete(
+        f"/departments/{dept_id}",
+        headers = auth_headers_admin
+    )
+    assert del_resp.status_code == 200
+    assert del_resp.json()["archived"] == False
+
+
+def test_soft_delete_department_with_users(client, auth_headers_admin, user_token):
+    """
+    Département avec user lié → soft delete (archivage)
+    Le user_token crée automatiquement un user dans test_department
+    On crée un nouveau dept avec un user lié
+    """
+    # Créer un nouveau département
+    dept_resp = client.post("/departments",
+        json    = {"name": "Dept To Archive"},
+        headers = auth_headers_admin
+    )
+    dept_id = dept_resp.json()["id"]
+
+    # Créer un user dans ce département
+    client.post("/users",
+        json = {
+            "full_name"    : "User Archive",
+            "email"        : "archive@test.com",
+            "password"     : "Test1234",
             "role"         : "user",
             "department_id": dept_id
-        }, headers=headers)
+        },
+        headers = auth_headers_admin
+    )
 
-        # Supprimer → doit archiver
-        del_resp = client.delete(
-            f"/departments/{dept_id}",
-            headers=headers
-        )
-        assert del_resp.status_code == 200
-        result = del_resp.json()
-        assert result["archived"] == True
+    # Supprimer → doit archiver car user lié
+    del_resp = client.delete(
+        f"/departments/{dept_id}",
+        headers = auth_headers_admin
+    )
+    assert del_resp.status_code == 200
+    assert del_resp.json()["archived"] == True
 
-    def test_hard_delete_empty(self, client, admin_token):
-        """Département vide → suppression physique"""
-        headers = {"Authorization": f"Bearer {admin_token}"}
 
-        # Créer département vide
-        resp = client.post("/departments", json={
-            "name": "Vide", "description": ""
-        }, headers=headers)
-        dept_id = resp.json()["id"]
-
-        # Supprimer → suppression physique
-        del_resp = client.delete(
-            f"/departments/{dept_id}",
-            headers=headers
-        )
-        assert del_resp.status_code == 200
-        result = del_resp.json()
-        assert result["archived"] == False
-
-    def test_delete_not_found(self, client, admin_token):
-        """Département inexistant → 404"""
-        resp = client.delete(
-            "/departments/99999",
-            headers={"Authorization": f"Bearer {admin_token}"}
-        )
-        assert resp.status_code == 404
+def test_delete_department_not_found(client, auth_headers_admin):
+    """Département inexistant → 404"""
+    resp = client.delete("/departments/9999", headers=auth_headers_admin)
+    assert resp.status_code == 404

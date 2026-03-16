@@ -1,156 +1,136 @@
-# ─── TESTS RAPPORTS ──────────────────────────────────────
-
-class TestSubmitReport:
-
-    def test_submit_success(self, client, user_token):
-        """Soumission rapport réussie"""
-        resp = client.post("/reports", json={
-            "week_number"   : 1,
-            "year"          : 2025,
-            "global_summary": "Semaine normale pour le département IT",
-            "problems"      : [
-                {
-                    "description"             : "Serveur tombé depuis lundi matin",
-                    "type"                    : "technique",
-                    "impact"                  : 4,
-                    "urgency"                 : 4,
-                    "repetitions"             : 2,
-                    "dependent_department_ids": []
-                }
-            ]
-        }, headers={"Authorization": f"Bearer {user_token}"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["week_number"] == 1
-        assert data["year"] == 2025
-        assert len(data["problems"]) == 1
-
-    def test_submit_duplicate_week(self, client, user_token):
-        """Rapport déjà soumis pour cette semaine → 400"""
-        headers = {"Authorization": f"Bearer {user_token}"}
-        payload = {
-            "week_number"   : 2,
-            "year"          : 2025,
-            "global_summary": "Semaine 2",
-            "problems"      : [
-                {
-                    "description"             : "Problème réseau",
-                    "type"                    : "technique",
-                    "impact"                  : 3,
-                    "urgency"                 : 3,
-                    "repetitions"             : 1,
-                    "dependent_department_ids": []
-                }
-            ]
-        }
-        client.post("/reports", json=payload, headers=headers)
-        resp = client.post("/reports", json=payload, headers=headers)
-        assert resp.status_code == 400
-
-    def test_submit_no_token(self, client):
-        """Sans token → 401"""
-        resp = client.post("/reports", json={
-            "week_number"   : 3,
-            "year"          : 2025,
-            "global_summary": "Test",
-            "problems"      : []
-        })
-        assert resp.status_code == 401
-
-    def test_submit_with_nlp(self, client, user_token):
-        """Rapport soumis → NLP pipeline exécuté"""
-        resp = client.post("/reports", json={
-            "week_number"   : 4,
-            "year"          : 2025,
-            "global_summary": "Semaine critique IT",
-            "problems"      : [
-                {
-                    "description"             : "Karim Benali n'a pas fourni les accès au serveur",
-                    "type"                    : "technique",
-                    "impact"                  : 5,
-                    "urgency"                 : 5,
-                    "repetitions"             : 3,
-                    "dependent_department_ids": []
-                }
-            ]
-        }, headers={"Authorization": f"Bearer {user_token}"})
-        assert resp.status_code == 200
-        data = resp.json()
-        problem = data["problems"][0]
-        # NLP pipeline doit avoir calculé le score
-        assert problem["criticality_score"] is not None
-        assert problem["criticality_score"] > 0
+import pytest
 
 
-class TestGetReports:
+# ─── PAYLOAD RAPPORT ─────────────────────────────────────
 
-    def test_get_reports_user(self, client, user_token):
-        """User voit ses propres rapports"""
-        resp = client.get(
-            "/reports",
-            headers={"Authorization": f"Bearer {user_token}"}
-        )
-        assert resp.status_code == 200
-        assert isinstance(resp.json(), list)
-
-    def test_get_reports_admin(self, client, admin_token):
-        """Admin voit tous les rapports"""
-        resp = client.get(
-            "/reports",
-            headers={"Authorization": f"Bearer {admin_token}"}
-        )
-        assert resp.status_code == 200
-        assert isinstance(resp.json(), list)
-
-    def test_get_reports_no_token(self, client):
-        """Sans token → 401"""
-        resp = client.get("/reports")
-        assert resp.status_code == 401
+def make_report(week=1, year=2026, dept_ids=None):
+    return {
+        "week_number"   : week,
+        "year"          : year,
+        "global_summary": "Résumé test semaine",
+        "problems"      : [
+            {
+                "description"             : "Problème technique critique serveur tombé",
+                "type"                    : "technique",
+                "impact"                  : 5,
+                "urgency"                 : 5,
+                "repetitions"             : 3,
+                "dependent_department_ids": dept_ids or []
+            }
+        ]
+    }
 
 
-class TestAnalyzeEndpoint:
+# ─── TESTS SOUMETTRE RAPPORT ─────────────────────────────
 
-    def test_analyze_success(self, client, user_token):
-        """POST /analyze → résultat NLP"""
-        resp = client.post("/analyze", json={
-            "description"    : "Le serveur de production est tombé depuis vendredi",
+def test_submit_report_success(client, auth_headers_user):
+    """User soumet un rapport avec succès"""
+    resp = client.post("/reports",
+        json    = make_report(week=1),
+        headers = auth_headers_user
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["week_number"] == 1
+    assert len(data["problems"]) == 1
+
+
+def test_submit_report_nlp_processed(client, auth_headers_user):
+    """Pipeline NLP déclenché automatiquement"""
+    resp = client.post("/reports",
+        json    = make_report(week=2),
+        headers = auth_headers_user
+    )
+    assert resp.status_code == 200
+    problem = resp.json()["problems"][0]
+    assert problem["criticality_score"] is not None
+    assert problem["criticality_score"] > 0
+
+
+def test_submit_report_duplicate_week(client, auth_headers_user):
+    """Rapport dupliqué même semaine → 400"""
+    client.post("/reports", json=make_report(week=3), headers=auth_headers_user)
+    resp = client.post("/reports", json=make_report(week=3), headers=auth_headers_user)
+    assert resp.status_code == 400
+
+
+def test_submit_report_invalid_week(client, auth_headers_user):
+    """Semaine invalide (>52) → 422"""
+    resp = client.post("/reports",
+        json    = make_report(week=60),
+        headers = auth_headers_user
+    )
+    assert resp.status_code == 422
+
+
+def test_submit_report_with_dependencies(client, auth_headers_user, auth_headers_admin):
+    """Rapport avec dépendances"""
+    dept = client.post("/departments",
+        json    = {"name": "Dept Dep"},
+        headers = auth_headers_admin
+    ).json()
+    resp = client.post("/reports",
+        json    = make_report(week=4, dept_ids=[dept["id"]]),
+        headers = auth_headers_user
+    )
+    assert resp.status_code == 200
+    deps = resp.json()["problems"][0]["dependencies"]
+    assert len(deps) == 1
+
+
+# ─── TESTS LISTER RAPPORTS ───────────────────────────────
+
+def test_get_reports_user_own(client, auth_headers_user):
+    """User voit uniquement ses rapports"""
+    client.post("/reports", json=make_report(week=5), headers=auth_headers_user)
+    resp = client.get("/reports", headers=auth_headers_user)
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
+
+def test_get_reports_admin_all(client, auth_headers_admin, auth_headers_user):
+    """Admin voit tous les rapports"""
+    client.post("/reports", json=make_report(week=6), headers=auth_headers_user)
+    resp = client.get("/reports", headers=auth_headers_admin)
+    assert resp.status_code == 200
+    assert len(resp.json()) >= 1
+
+
+def test_get_report_by_id(client, auth_headers_user, auth_headers_admin):
+    """Récupérer rapport par ID"""
+    created = client.post("/reports",
+        json    = make_report(week=7),
+        headers = auth_headers_user
+    ).json()
+    resp = client.get(f"/reports/{created['id']}", headers=auth_headers_admin)
+    assert resp.status_code == 200
+    assert resp.json()["id"] == created["id"]
+
+
+def test_get_report_not_found(client, auth_headers_admin):
+    """Rapport inexistant → 404"""
+    resp = client.get("/reports/9999", headers=auth_headers_admin)
+    assert resp.status_code == 404
+
+
+# ─── TESTS ANALYZE ───────────────────────────────────────
+
+def test_analyze_endpoint(client, auth_headers_user):
+    """Analyse IA en temps réel"""
+    resp = client.post("/analyze",
+        json = {
+            "description"    : "Karim Benali a bloqué le serveur depuis lundi",
             "impact"         : 5,
             "urgency"        : 5,
             "repetitions"    : 3,
             "nb_dependencies": 2,
-            "week_number"    : 5,
-            "year"           : 2025
-        }, headers={"Authorization": f"Bearer {user_token}"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "criticality_score" in data
-        assert "criticality_level" in data
-        assert data["criticality_score"] > 0
-
-    def test_analyze_no_token(self, client):
-        """Sans token → 401"""
-        resp = client.post("/analyze", json={
-            "description"    : "Test",
-            "impact"         : 3,
-            "urgency"        : 3,
-            "repetitions"    : 1,
-            "nb_dependencies": 0,
             "week_number"    : 1,
-            "year"           : 2025
-        })
-        assert resp.status_code == 401
-
-    def test_analyze_high_score_alert(self, client, user_token):
-        """Score > 4.6 → alert_sent dans la réponse"""
-        resp = client.post("/analyze", json={
-            "description"    : "Panne critique serveur production",
-            "impact"         : 5,
-            "urgency"        : 5,
-            "repetitions"    : 5,
-            "nb_dependencies": 3,
-            "week_number"    : 6,
-            "year"           : 2025
-        }, headers={"Authorization": f"Bearer {user_token}"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["criticality_score"] >= 4.6
+            "year"           : 2026
+        },
+        headers = auth_headers_user
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "criticality_score"    in data
+    assert "probable_responsible" in data
+    assert "entities"             in data

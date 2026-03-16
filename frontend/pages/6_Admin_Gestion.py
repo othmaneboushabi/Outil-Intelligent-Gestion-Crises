@@ -205,49 +205,87 @@ with tab2:
         if not users:
             st.info("Aucun utilisateur créé.")
         else:
-            for user in users:
+            # ─── BARRE DE RECHERCHE ───────────────────────────
+            search = st.text_input(
+                "🔍 Rechercher un utilisateur",
+                placeholder = "Entrez le nom...",
+                key         = "search_user"
+            )
+
+            # Filtrer selon la recherche
+            if search:
+                users_filtered = [
+                    u for u in users
+                    if search.lower() in u.get("full_name", "").lower()
+                ]
+            else:
+                users_filtered = users
+
+            # Afficher le nombre de résultats
+            if search:
+                st.caption(f"🔎 {len(users_filtered)} résultat(s) pour **'{search}'**")
+
+            if not users_filtered:
+                st.warning(f"⚠️ Aucun utilisateur trouvé pour '{search}'")
+            else:
+                # ─── EN-TÊTE ──────────────────────────────────
                 col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
-
-                full_name = user.get("full_name") or user.get("email", "Inconnu")
-
                 with col1:
-                    st.markdown(f"**{full_name}**")
+                    st.markdown("**👤 Nom**")
                 with col2:
-                    st.markdown(f"📧 {user['email']}")
+                    st.markdown("**📧 Email**")
                 with col3:
-                    dept_name = next(
-                        (d["name"] for d in depts2
-                         if d["id"] == user.get("department_id")),
-                        "—"
-                    )
-                    st.markdown(f"🏢 {dept_name}")
+                    st.markdown("**🏢 Département**")
                 with col4:
-                    if user["role"] == "admin":
-                        st.markdown("👑 Admin")
-                    else:
-                        st.markdown("👤 User")
+                    st.markdown("**🎭 Rôle**")
                 with col5:
-                    is_active = user.get("is_active", True)
-                    if user["role"] != "admin":
-                        btn_label = "🔴" if is_active else "🟢"
-                        btn_help  = "Désactiver" if is_active else "Activer"
-
-                        if st.button(
-                            btn_label,
-                            key  = f"toggle_{user['id']}",
-                            help = btn_help
-                        ):
-                            toggle_resp = requests.patch(
-                                f"{API_URL}/users/{user['id']}/toggle",
-                                headers = get_headers()
-                            )
-                            if toggle_resp.status_code == 200:
-                                st.rerun()
-                            else:
-                                st.error("Erreur lors de la modification.")
-                    else:
-                        st.markdown("🔒")
-
+                    st.markdown("**⚡ Statut**")
                 st.divider()
+
+                # ─── LISTE DES USERS ──────────────────────────
+                for user in users_filtered:
+                    col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
+
+                    full_name = user.get("full_name") or user.get("email", "Inconnu")
+
+                    with col1:
+                        st.markdown(f"**{full_name}**")
+                    with col2:
+                        st.markdown(f"📧 {user['email']}")
+                    with col3:
+                        dept_name = next(
+                            (d["name"] for d in depts2
+                             if d["id"] == user.get("department_id")),
+                            "—"
+                        )
+                        st.markdown(f"🏢 {dept_name}")
+                    with col4:
+                        if user["role"] == "admin":
+                            st.markdown("👑 Admin")
+                        else:
+                            st.markdown("👤 User")
+                    with col5:
+                        is_active = user.get("is_active", True)
+                        if user["role"] != "admin":
+                            btn_label = "🔴" if is_active else "🟢"
+                            btn_help  = "Désactiver" if is_active else "Activer"
+
+                            if st.button(
+                                btn_label,
+                                key  = f"toggle_{user['id']}",
+                                help = btn_help
+                            ):
+                                toggle_resp = requests.patch(
+                                    f"{API_URL}/users/{user['id']}/toggle",
+                                    headers = get_headers()
+                                )
+                                if toggle_resp.status_code == 200:
+                                    st.rerun()
+                                else:
+                                    st.error("Erreur lors de la modification.")
+                        else:
+                            st.markdown("🔒")
+
+                    st.divider()
     else:
         st.error("Erreur lors de la récupération des utilisateurs.")
