@@ -3,7 +3,6 @@
 ---
 
 ## Sprint 1 — Infrastructure + Auth JWT
-**Date :** 2026-03-07
 **Branche :** develop
 
 ### Fichiers créés
@@ -27,7 +26,6 @@
 ---
 
 ## Sprint 2 — NLP Pipeline
-**Date :** 2026-03-07
 **Branche :** develop
 
 ### Fichiers créés
@@ -47,7 +45,6 @@
 ---
 
 ## Sprint 3 — Domino Engine
-**Date :** 2026-03-07
 **Branche :** develop
 
 ### Fichiers créés
@@ -60,12 +57,12 @@
 
 ### Décisions techniques
 - Graphe NetworkX + visualisation PyVis
+- Centrality : out_degree_centrality (département bloquant le plus de depts)
 - Test validé : IT bloque Finance, RH, Logistique (score 4.7)
 
 ---
 
 ## Sprint 4 — Hugging Face + Résumé Exécutif
-**Date :** 2026-03-07
 **Branche :** develop
 
 ### Fichiers créés
@@ -84,7 +81,6 @@
 ---
 
 ## Sprint 5 — Frontend Streamlit
-**Date :** 2026-03-07
 **Branche :** develop
 
 ### Fichiers créés
@@ -110,7 +106,6 @@
 ---
 
 ## Corrections Sprint 5
-**Date :** 2026-03-08
 **Branche :** develop
 
 ### Priorité 1 — Route POST /analyze + Bouton IA temps réel
@@ -121,6 +116,7 @@
 
 ### Priorité 2 — Soft delete département
 - Colonne is_active ajoutée dans models.py
+- Migration ALTER TABLE executée sur PostgreSQL
 - Archivage si utilisateurs ou rapports liés
 - Suppression physique si aucune donnée liée
 - Statut 🟢 Actif / 🔴 Archivé affiché dans Page 6
@@ -137,7 +133,6 @@
 ---
 
 ## Sprint 6 — Docker + Tests
-**Date :** 2026-03-08
 **Branche :** develop
 
 ### Docker
@@ -148,9 +143,40 @@
 - backend/requirements.txt mis à jour (fpdf2 ajouté)
 
 ### Tests pytest
-- A faire
+- 80 tests passing, 0 failed
+- Coverage : 80%
+- Fichiers : test_auth, test_departments, test_users, test_reports,
+             test_scoring, test_nlp, test_domino, test_alerts
 
 ### État
-- Docker build : en cours
-- Tests pytest : à faire
-- Livraison v1.0.0 : après rapport
+- Docker : ✅ configuré
+- Tests pytest : ✅ 80 passed
+- Livraison v1.0.0 : après rapport PFA
+
+---
+
+## Corrections Post-Sprint 6
+**Branche :** develop
+
+### Bugs corrigés
+- fix: is_active département manquant → migration ALTER TABLE
+- fix: validation département obligatoire pour user (schemas.py)
+- fix: last_login non mis à jour → db.refresh() ajouté (crud.py)
+- fix: PUT /users département inexistant → validation get_department_by_id
+- fix: soft delete département → subquery pour compter rapports liés
+- fix: goulot domino → out_degree_centrality au lieu de betweenness
+
+### Améliorations Frontend
+- feat: barre de recherche users dans Page 6 Administration
+- feat: 2 problèmes via radio button dans Page 5 Mon Département
+- feat: Analyser via IA dans navigation rapide accueil Admin
+- feat: titre "Entités détectées" (suppression mention SpaCy)
+- feat: NER amélioré avec détection manuelle DATE et LOC
+
+### Tests corrigés
+- fix: conftest.py — import models avant create_all (tables SQLite)
+- fix: test_scoring.py — formule v2.1 recalculée correctement
+- fix: test_auth.py — email admin_test@crisis.com aligné avec conftest
+- fix: test_alerts.py — seuil alerte > 4.5 (formule v2.1)
+- fix: test_departments.py — soft delete avec user lié explicite
+- fix: test_nlp.py — labels "Alerte Maximale" et "Critique" corrigés
